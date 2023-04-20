@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
 
-import '../models/record.dart';
+import '../models/record_hive.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -15,10 +16,32 @@ class _HomePageState extends State<HomePage> {
   String currentRecordName = '';
   List<Record> records = [];
 
+  void _setup() async {
+    if (!Hive.isAdapterRegistered(1)) {
+      Hive.registerAdapter(RecordAdapter());
+    }
+    final box = await Hive.openBox<Record>('recordsBox');
+    box.listenable().addListener(() {
+      setState(() {
+        records = box.values.toList();
+      });
+    });
+    setState(() {
+      records = box.values.toList();
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _setup();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.indigoAccent,
         title: const Text('ToDoList'),
         centerTitle: true,
         actions: [
@@ -55,12 +78,14 @@ class _HomePageState extends State<HomePage> {
                                               contentPadding: const EdgeInsets.symmetric(horizontal: 8)),
                                         ),
                                         ElevatedButton(
-                                            onPressed: () {
-                                              setState(() {
-                                                records.removeAt(index);
-                                                records.insert(
-                                                    0, Record(name: currentRecordName, recordDate: DateTime.now()));
-                                              });
+                                            onPressed: () async {
+                                              final box = await Hive.openBox<Record>('recordsBox');
+                                              box.putAt(
+                                                  index,
+                                                  Record(
+                                                      name: currentRecordName,
+                                                      recordDate: DateTime.now(),
+                                                      isChecked: false));
                                               Navigator.of(context).pop();
                                             },
                                             child: const Text('Редактировать'))
@@ -75,10 +100,9 @@ class _HomePageState extends State<HomePage> {
                       label: 'Edit',
                     ),
                     SlidableAction(
-                      onPressed: (context) {
-                        setState(() {
-                          records.removeAt(index);
-                        });
+                      onPressed: (context) async {
+                        final box = await Hive.openBox<Record>('recordsBox');
+                        box.deleteAt(index);
                       },
                       backgroundColor: const Color(0xFFFE4A49),
                       foregroundColor: Colors.white,
@@ -88,15 +112,39 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
                 child: ListTile(
-                  title: Text(records[index].name),
+                  onTap: () async {
+                    final box = await Hive.openBox<Record>('recordsBox');
+                    box.putAt(
+                        index,
+                        Record(
+                            name: records[index].name,
+                            recordDate: records[index].recordDate,
+                            isChecked: !records[index].isChecked!));
+                  },
+                  leading: Checkbox(
+                    value: records[index].isChecked ?? false,
+                    onChanged: (value) async {
+                      final box = await Hive.openBox<Record>('recordsBox');
+                      box.putAt(index,
+                          Record(name: records[index].name, recordDate: records[index].recordDate, isChecked: value));
+                    },
+                  ),
+                  title: Text(
+                    records[index].name,
+                    style: records[index].isChecked!
+                        ? const TextStyle(decoration: TextDecoration.lineThrough)
+                        : const TextStyle(),
+                  ),
                   subtitle: Text(DateFormat('d MMMM y, EEEE, HH:mm', 'ru_RU').format(records[index].recordDate)),
                 ),
               ),
           separatorBuilder: (context, index) => const Divider(),
           itemCount: records.length),
       floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.indigoAccent,
         onPressed: () {
           showDialog(
+              barrierDismissible: false,
               context: context,
               builder: (context) => Dialog(
                     child: Padding(
@@ -111,16 +159,32 @@ class _HomePageState extends State<HomePage> {
                                 border: OutlineInputBorder(),
                                 contentPadding: EdgeInsets.symmetric(horizontal: 8)),
                           ),
-                          ElevatedButton(
-                              onPressed: () {
-                                if (currentRecordName.isNotEmpty) {
-                                  setState(() {
-                                    records.add(Record(name: currentRecordName, recordDate: DateTime.now()));
-                                  });
-                                  Navigator.of(context).pop();
-                                }
-                              },
-                              child: const Text('Добавить'))
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.indigoAccent),
+                                  onPressed: () async {
+                                    if (currentRecordName.isNotEmpty) {
+                                      if (!Hive.isAdapterRegistered(1)) {
+                                        Hive.registerAdapter(RecordAdapter());
+                                      }
+                                      final box = await Hive.openBox<Record>('recordsBox');
+                                      box.add(Record(
+                                          name: currentRecordName, recordDate: DateTime.now(), isChecked: false));
+                                      Navigator.of(context).pop();
+                                    }
+                                  },
+                                  child: const Text('Добавить')),
+                              const SizedBox(width: 5),
+                              ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.indigoAccent),
+                                  onPressed: () {
+                                    Navigator.of(context).pop();
+                                  },
+                                  child: const Text('Отменить'))
+                            ],
+                          )
                         ],
                       ),
                     ),
